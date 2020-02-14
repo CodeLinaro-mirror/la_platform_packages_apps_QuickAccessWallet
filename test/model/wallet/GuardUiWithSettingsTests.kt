@@ -30,9 +30,9 @@ class GuardUiWithSettingsTests {
         val guarded = wps.guardUiWithSettings(
                 deviceProvisionedSetting = settingProviderOf(true),
                 lockdownSetting = settingProviderOf(false),
-                walletAvailableSetting = FakeSetting<Boolean?>(true),
-                walletEnabledSetting = FakeSetting<Boolean?>(true),
-                backendAvailabilityChecker = FakeBackendAvailabilityChecker(eventualOf(true))
+                walletAvailableSetting = settingProviderOf(true),
+                walletEnabledSetting = settingProviderOf(true),
+                logger = FakeLogger
         )
         assertThat(guarded.getUiScopedSubcomponent()).isNotNull()
     }
@@ -45,9 +45,9 @@ class GuardUiWithSettingsTests {
         val guarded = wps.guardUiWithSettings(
                 deviceProvisionedSetting = settingProviderOf(true),
                 lockdownSetting = settingProviderOf(true),
-                walletAvailableSetting = FakeSetting<Boolean?>(true),
-                walletEnabledSetting = FakeSetting<Boolean?>(true),
-                backendAvailabilityChecker = FakeBackendAvailabilityChecker(eventualOf(true))
+                walletAvailableSetting = settingProviderOf(true),
+                walletEnabledSetting = settingProviderOf(true),
+                logger = FakeLogger
         )
         assertThat(guarded.getUiScopedSubcomponent()).isNull()
     }
