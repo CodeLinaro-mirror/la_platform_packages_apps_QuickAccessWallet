@@ -15,11 +15,9 @@
   ~ limitations under the License.
   -->
 
-<FrameLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginTop="24dp"
     android:clipChildren="false">
 
     <LinearLayout
@@ -28,38 +26,41 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:clipChildren="false"
-        visibility="gone">
+        android:visibility="gone">
 
-        <TextView
-            android:id="@+id/card_label"
-            style="@style/TextAppearance.QuickAccessWallet"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:importantForAccessibility="no"
-            android:paddingBottom="4dp"
-            android:drawablePadding="8dp"
-            android:textAlignment="center"/>
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="48dp">
+
+            <TextView
+                android:id="@+id/card_label"
+                style="@style/Wallet.TextAppearance"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:importantForAccessibility="no"
+                android:drawablePadding="8dp"
+                android:textAlignment="center" />
+
+            <ImageView
+                android:id="@+id/menu_btn"
+                android:src="@drawable/ic_more_vert"
+                android:layout_gravity="center|end"
+                android:layout_width="@dimen/wallet_menu_btn_size"
+                android:layout_height="48dp"
+                android:padding="12dp"
+                android:tint="@color/wallet_more_vert"
+                android:contentDescription="@string/global_actions_settings_description"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:theme="@style/Wallet.Theme" />
+        </FrameLayout>
 
         <com.android.systemui.plugin.globalactions.wallet.WalletCardCarousel
             android:id="@+id/card_carousel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:clipChildren="false"
-            android:clipToPadding="false"/>
-
-        <Button
-            android:id="@+id/wallet_button"
-            style="@style/TextAppearance.QuickAccessWallet"
-            android:background="@drawable/wallet_button_bg"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:minHeight="0dp"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="6dp"
-            android:textAlignment="center"
-            android:visibility="gone"/>
+            android:clipToPadding="false" />
     </LinearLayout>
 
     <include layout="@layout/empty_state_view" />
@@ -69,15 +70,12 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="80dp"
-        android:layout_marginBottom="50dp"
-        android:layout_marginLeft="24dp"
-        android:layout_marginRight="24dp"
+        android:layout_marginHorizontal="40dp"
         android:textSize="14sp"
         android:textColor="#DADCE0"
-        android:padding="15dp"
         android:elevation="7dp"
         android:background="@drawable/rounded_corners"
         android:gravity="center"
-        android:visibility="gone"/>
+        android:visibility="gone" />
 
 </FrameLayout>
