@@ -26,6 +26,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.robolectric.Shadows.shadowOf;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
+
 import android.app.Application;
 import android.app.PendingIntent;
 import android.content.ComponentName;
@@ -46,8 +48,8 @@ import android.service.quickaccesswallet.WalletServiceEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.ListPopupWindow;
 import android.widget.TextView;
 
 import androidx.recyclerview.widget.RecyclerView;
@@ -62,8 +64,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
+import org.robolectric.shadows.ShadowLog;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -82,7 +86,6 @@ public class WalletPanelViewControllerTest {
     private final Drawable mWalletLogo = mContext.getDrawable(android.R.drawable.ic_lock_lock);
     private final Intent mWalletIntent = new Intent(QuickAccessWalletService.ACTION_VIEW_WALLET)
             .setComponent(new ComponentName(mContext.getPackageName(), "WalletActivity"));
-
 
     @Mock
     QuickAccessWalletClient mWalletClient;
@@ -113,6 +116,7 @@ public class WalletPanelViewControllerTest {
         when(mWalletClient.getShortcutShortLabel()).thenReturn(SHORTCUT_SHORT_LABEL);
         when(mWalletClient.getServiceLabel()).thenReturn(SERVICE_LABEL);
         when(mWalletClient.createWalletIntent()).thenReturn(mWalletIntent);
+        ShadowLog.stream = System.out;
     }
 
     /**
@@ -247,7 +251,7 @@ public class WalletPanelViewControllerTest {
     }
 
     @Test
-    public void onWalletCardsRetrieved_showsCards_clickWalletButton_startsWalletActivity() {
+    public void onWalletCardsRetrieved_showsOverflowButton_startWalletActivity() {
         mViewController.queryWalletCards();
         verify(mWalletClient).getWalletCards(any(), mRequestCaptor.capture(),
                 mCallbackCaptor.capture());
@@ -257,13 +261,20 @@ public class WalletPanelViewControllerTest {
         mCallbackCaptor.getValue().onWalletCardsRetrieved(response);
 
         WalletView walletView = (WalletView) mViewController.getPanelContent();
-        RecyclerView carouselView = walletView.getCardCarousel();
-        assertThat(carouselView.getVisibility()).isEqualTo(View.VISIBLE);
-        Button walletButton = walletView.getWalletButton();
-        assertThat(walletButton.getVisibility()).isEqualTo(View.VISIBLE);
-        assertThat(walletButton.getText()).isEqualTo(SHORTCUT_SHORT_LABEL);
+        View overflowIcon = walletView.getOverflowIcon();
+        assertThat(overflowIcon.getVisibility()).isEqualTo(View.VISIBLE);
 
-        walletButton.performClick();
+        overflowIcon.performClick();
+
+        ListPopupWindow popupWindow = walletView.getOverflowPopup();
+        assertThat(popupWindow.isShowing()).isTrue();
+        assertThat(popupWindow.getListView().getCount()).isEqualTo(2);
+        assertThat(((TextView) popupWindow.getListView().getChildAt(0)).getText()).isEqualTo(
+                SHORTCUT_SHORT_LABEL);
+        assertThat(((TextView) popupWindow.getListView().getChildAt(1)).getText()).isEqualTo(
+                "Settings");
+
+        popupWindow.performItemClick(0);
 
         Intent nextIntent = shadowOf(mContext).getNextStartedActivity();
         assertThat(nextIntent).isEqualTo(mWalletIntent);
@@ -272,7 +283,7 @@ public class WalletPanelViewControllerTest {
     }
 
     @Test
-    public void onWalletCardsRetrieved_noShortLabel_showsCardsWithoutWalletButton() {
+    public void onWalletCardsRetrieved_noShortLabel_showsOnlySettingsInOverflowMenu() {
         when(mWalletClient.getShortcutShortLabel()).thenReturn(null);
         mViewController.queryWalletCards();
         verify(mWalletClient).getWalletCards(any(), mRequestCaptor.capture(),
@@ -283,13 +294,25 @@ public class WalletPanelViewControllerTest {
         mCallbackCaptor.getValue().onWalletCardsRetrieved(response);
 
         WalletView walletView = (WalletView) mViewController.getPanelContent();
-        RecyclerView carouselView = walletView.getCardCarousel();
-        assertThat(carouselView.getVisibility()).isEqualTo(View.VISIBLE);
-        assertThat(walletView.getWalletButton().getVisibility()).isEqualTo(View.GONE);
+        walletView.getOverflowIcon().performClick();
+        ListPopupWindow popupWindow = walletView.getOverflowPopup();
+        assertThat(popupWindow.isShowing()).isTrue();
+        assertThat(popupWindow.getListView().getCount()).isEqualTo(1);
+        assertThat(((TextView) popupWindow.getListView().getChildAt(0)).getText()).isEqualTo(
+                "Settings");
+
+        popupWindow.performItemClick(0);
+
+        Intent nextIntent = shadowOf(mContext).getNextStartedActivity();
+        assertThat(nextIntent.getAction()).isEqualTo(
+                "com.android.settings.GLOBAL_ACTIONS_PANEL_SETTINGS");
+        assertThat(nextIntent.getPackage()).isEqualTo("com.android.settings");
+        verify(mPluginCallbacks).startPendingIntentDismissingKeyguard(any());
+        verify(mPluginCallbacks).dismissGlobalActionsMenu();
     }
 
     @Test
-    public void onWalletCardsRetrieved_noWalletIntent_showsCardsWithoutWalletButton() {
+    public void onWalletCardsRetrieved_noWalletIntent_showsOnlySettingsInOverflowMenu() {
         when(mWalletClient.createWalletIntent()).thenReturn(null);
         mViewController.queryWalletCards();
         verify(mWalletClient).getWalletCards(any(), mRequestCaptor.capture(),
@@ -300,9 +323,15 @@ public class WalletPanelViewControllerTest {
         mCallbackCaptor.getValue().onWalletCardsRetrieved(response);
 
         WalletView walletView = (WalletView) mViewController.getPanelContent();
-        RecyclerView carouselView = walletView.getCardCarousel();
-        assertThat(carouselView.getVisibility()).isEqualTo(View.VISIBLE);
-        assertThat(walletView.getWalletButton().getVisibility()).isEqualTo(View.GONE);
+        ListPopupWindow popupWindow = walletView.getOverflowPopup();
+        assertThat(popupWindow.isShowing()).isFalse();
+
+        walletView.getOverflowIcon().performClick();
+
+        assertThat(popupWindow.isShowing()).isTrue();
+        assertThat(popupWindow.getListView().getCount()).isEqualTo(1);
+        assertThat(((TextView) popupWindow.getListView().getChildAt(0)).getText()).isEqualTo(
+                "Settings");
     }
 
     @Test
@@ -412,6 +441,28 @@ public class WalletPanelViewControllerTest {
     }
 
     @Test
+    public void onWalletCardsRetrieved_isDelayed_showsError() {
+        WalletView walletView = (WalletView) mViewController.getPanelContent();
+        TextView errorView = walletView.getErrorView();
+        ViewGroup cardCarouselContainer = walletView.getCardCarouselContainer();
+        ViewGroup emptyStateView = walletView.getEmptyStateView();
+
+        mViewController.queryWalletCards();
+        Robolectric.getForegroundThreadScheduler().advanceBy(3, SECONDS);
+
+        assertThat(emptyStateView.getVisibility()).isEqualTo(View.GONE);
+        assertThat(cardCarouselContainer.getVisibility()).isEqualTo(View.GONE);
+        assertThat(errorView.getVisibility()).isEqualTo(View.VISIBLE);
+
+        GetWalletCardsResponse response = new GetWalletCardsResponse(Collections.emptyList(), 0);
+        mViewController.onWalletCardsRetrieved(response);
+
+        assertThat(emptyStateView.getVisibility()).isEqualTo(View.VISIBLE);
+        assertThat(cardCarouselContainer.getVisibility()).isEqualTo(View.GONE);
+        assertThat(errorView.getVisibility()).isEqualTo(View.GONE);
+    }
+
+    @Test
     public void onWalletServiceEvent_tapStarted_dismissesGlobalActionsMenu() {
         mViewController.queryWalletCards();
         verify(mWalletClient).addWalletServiceEventListener(mListenerCaptor.capture());
@@ -490,7 +541,7 @@ public class WalletPanelViewControllerTest {
     }
 
     @Test
-    public void onSingleTapUp_dismissesWallet() {
+    public void onSingleTapUp_doesNotdismissWallet() {
         mViewController.queryWalletCards();
         verify(mWalletClient).getWalletCards(any(), mRequestCaptor.capture(),
                 mCallbackCaptor.capture());
@@ -509,9 +560,9 @@ public class WalletPanelViewControllerTest {
         view.onTouchEvent(MotionEvent.obtain(0, 0, MotionEvent.ACTION_UP, 0, 0, 0));
 
         verify(mPluginCallbacks, never()).startPendingIntentDismissingKeyguard(any());
-        verify(mPluginCallbacks).dismissGlobalActionsMenu();
-        verify(mWalletClient).notifyWalletDismissed();
-        verify(mWalletClient).removeWalletServiceEventListener(any());
+        verify(mPluginCallbacks, never()).dismissGlobalActionsMenu();
+        verify(mWalletClient, never()).notifyWalletDismissed();
+        verify(mWalletClient, never()).removeWalletServiceEventListener(any());
     }
 
     private WalletCard createWalletCard(String cardId) {
