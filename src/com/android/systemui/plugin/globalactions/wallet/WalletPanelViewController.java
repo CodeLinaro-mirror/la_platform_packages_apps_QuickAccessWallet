@@ -19,6 +19,8 @@ package com.android.systemui.plugin.globalactions.wallet;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.os.Handler;
@@ -35,6 +37,7 @@ import android.util.Log;
 import android.view.View;
 import android.widget.FrameLayout;
 
+import com.android.systemui.plugin.globalactions.wallet.WalletPopupMenu.OverflowItem;
 import com.android.systemui.plugins.GlobalActionsPanelPlugin;
 
 import java.util.ArrayList;
@@ -52,7 +55,10 @@ public class WalletPanelViewController implements
     private static final String TAG = "WalletPanelViewCtrl";
     private static final int MAX_CARDS = 10;
     private static final long SELECTION_DELAY_MILLIS = TimeUnit.SECONDS.toMillis(30);
-
+    private static final String PREFS_WALLET_VIEW_HEIGHT = "wallet_view_height";
+    private static final String PREFS_HAS_CARDS = "has_cards";
+    private static final String SETTINGS_PKG = "com.android.settings";
+    private static final String SETTINGS_ACTION = SETTINGS_PKG + ".GLOBAL_ACTIONS_PANEL_SETTINGS";
     private final Context mSysuiContext;
     private final Context mPluginContext;
     private final QuickAccessWalletClient mWalletClient;
@@ -62,6 +68,7 @@ public class WalletPanelViewController implements
     private final ExecutorService mExecutor;
     private final Handler mHandler;
     private final Runnable mSelectionRunnable = this::selectCard;
+    private final SharedPreferences mPrefs;
     private boolean mIsDeviceLocked;
     private boolean mIsDismissed;
     private boolean mHasRegisteredListener;
@@ -76,9 +83,11 @@ public class WalletPanelViewController implements
         mSysuiContext = sysuiContext;
         mPluginContext = pluginContext;
         mWalletClient = walletClient;
+        mPrefs = mSysuiContext.getSharedPreferences(TAG, Context.MODE_PRIVATE);
         mPluginCallbacks = pluginCallbacks;
         mIsDeviceLocked = isDeviceLocked;
         mWalletView = new WalletView(pluginContext);
+        mWalletView.setMinimumHeight(getExpectedMinHeight());
         mWalletView.setLayoutParams(
                 new FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT,
@@ -87,6 +96,11 @@ public class WalletPanelViewController implements
         mWalletCardCarousel.setSelectionListener(this);
         mHandler = new Handler(Looper.myLooper());
         mExecutor = Executors.newSingleThreadExecutor();
+        if (!mPrefs.getBoolean(PREFS_HAS_CARDS, false)) {
+            // The empty state view is shown preemptively when cards were not returned last time
+            // to decrease perceived latency.
+            showEmptyStateView();
+        }
     }
 
     /**
@@ -121,8 +135,8 @@ public class WalletPanelViewController implements
      */
     @Override
     public void onDeviceLockStateChanged(boolean deviceLocked) {
-        if (mIsDismissed || mIsDeviceLocked == deviceLocked) {
-            // Disregard repeat events
+        if (mIsDismissed || mIsDeviceLocked == deviceLocked || !mIsDeviceLocked) {
+            // Disregard repeat events and events after unlock
             return;
         }
         mIsDeviceLocked = deviceLocked;
@@ -144,9 +158,10 @@ public class WalletPanelViewController implements
             mHasRegisteredListener = true;
         }
         if (mIsDeviceLocked && !mWalletClient.isWalletFeatureAvailableWhenDeviceLocked()) {
-            mWalletView.showDeviceLockedMessage();
+            mWalletView.hide();
             return;
         }
+        mWalletView.show();
         mWalletView.hideErrorMessage();
         int cardWidthPx = mWalletCardCarousel.getCardWidthPx();
         int cardHeightPx = mWalletCardCarousel.getCardHeightPx();
@@ -179,8 +194,11 @@ public class WalletPanelViewController implements
             if (data.isEmpty()) {
                 showEmptyStateView();
             } else {
-                showCardCarousel(data, response.getSelectedIndex());
+                mWalletView.showCardCarousel(data, response.getSelectedIndex(), getOverflowItems());
             }
+            // The empty state view will not be shown preemptively next time if cards were returned
+            mPrefs.edit().putBoolean(PREFS_HAS_CARDS, !data.isEmpty()).apply();
+            removeMinHeightAndRecordHeightOnLayout();
         });
     }
 
@@ -233,19 +251,6 @@ public class WalletPanelViewController implements
         selectCard();
     }
 
-    /**
-     * Implements {@link WalletCardCarousel.OnSelectionListener}. Called when the user taps on the
-     * view outside of a card target which should cause the wallet to be dismissed.
-     */
-    @Override
-    public void onDismissGesture() {
-        if (mIsDismissed) {
-            return;
-        }
-        mPluginCallbacks.dismissGlobalActionsMenu();
-        onDismissed();
-    }
-
     private void selectCard() {
         mHandler.removeCallbacks(mSelectionRunnable);
         String selectedCardId = mSelectedCardId;
@@ -271,13 +276,17 @@ public class WalletPanelViewController implements
         startPendingIntent(pendingIntent);
     }
 
-    private void showCardCarousel(List<WalletCardViewInfo> data, int selectedIndex) {
-        CharSequence label = mWalletClient.getShortcutShortLabel();
-        Intent intent = mWalletClient.createWalletIntent();
-        if (TextUtils.isEmpty(label) || intent == null) {
-            mWalletView.showCardCarousel(data, selectedIndex, null, null);
+    private OverflowItem[] getOverflowItems() {
+        CharSequence walletLabel = mWalletClient.getShortcutShortLabel();
+        Intent walletIntent = mWalletClient.createWalletIntent();
+        CharSequence settingsLabel = mPluginContext.getString(R.string.settings);
+        Intent settingsIntent = new Intent(SETTINGS_ACTION).setPackage(SETTINGS_PKG);
+        OverflowItem settings = new OverflowItem(settingsLabel, () -> startIntent(settingsIntent));
+        if (!TextUtils.isEmpty(walletLabel) && walletIntent != null) {
+            OverflowItem wallet = new OverflowItem(walletLabel, () -> startIntent(walletIntent));
+            return new OverflowItem[]{wallet, settings};
         } else {
-            mWalletView.showCardCarousel(data, selectedIndex, label, v -> startIntent(intent));
+            return new OverflowItem[]{settings};
         }
     }
 
@@ -290,7 +299,11 @@ public class WalletPanelViewController implements
                 || TextUtils.isEmpty(logoContentDesc)
                 || TextUtils.isEmpty(label)
                 || intent == null) {
-            mWalletView.showErrorMessage(null);
+            Log.w(TAG, "QuickAccessWalletService manifest entry mis-configured");
+            // Issue is not likely to be resolved until manifest entries are enabled.
+            // Hide wallet feature until then.
+            mWalletView.hide();
+            mPrefs.edit().putInt(PREFS_WALLET_VIEW_HEIGHT, 0).apply();
         } else {
             mWalletView.showEmptyStateView(logo, logoContentDesc, label, v -> startIntent(intent));
         }
@@ -306,6 +319,34 @@ public class WalletPanelViewController implements
         mPluginCallbacks.startPendingIntentDismissingKeyguard(pendingIntent);
         mPluginCallbacks.dismissGlobalActionsMenu();
         onDismissed();
+    }
+
+    /**
+     * The total view height depends on whether cards are shown or not. Since it is not known at
+     * construction time whether cards will be available, the best we can do is set the height to
+     * whatever it was the last time. Setting the height correctly ahead of time is important
+     * because Home Controls are shown below the wallet and may be displayed before card data is
+     * loaded, causing the home controls to jump down when card data arrives.
+     */
+    private int getExpectedMinHeight() {
+        int expectedHeight = mPrefs.getInt(PREFS_WALLET_VIEW_HEIGHT, -1);
+        if (expectedHeight == -1) {
+            Resources res = mPluginContext.getResources();
+            expectedHeight = res.getDimensionPixelSize(R.dimen.min_wallet_empty_height);
+        }
+        return expectedHeight;
+    }
+
+    private void removeMinHeightAndRecordHeightOnLayout() {
+        mWalletView.setMinimumHeight(0);
+        mWalletView.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                    int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                mWalletView.removeOnLayoutChangeListener(this);
+                mPrefs.edit().putInt(PREFS_WALLET_VIEW_HEIGHT, bottom - top).apply();
+            }
+        });
     }
 
     private class QAWalletCardViewInfo implements WalletCardViewInfo {

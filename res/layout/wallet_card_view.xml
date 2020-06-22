@@ -20,11 +20,11 @@
              android:layout_width="wrap_content"
              android:layout_height="wrap_content">
 
-    <androidx.cardview.widget.CardView
+    <com.android.systemui.plugin.globalactions.wallet.WalletCardView
         android:id="@+id/card"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_margin="@dimen/card_margin"
+        android:layout_marginHorizontal="@dimen/card_margin"
         android:foreground="?android:attr/selectableItemBackground"
         app:cardBackgroundColor="@android:color/transparent"
         app:cardElevation="12dp">
@@ -35,5 +35,5 @@
             android:adjustViewBounds="true"
             android:contentDescription="@null"
             android:scaleType="fitXY" />
-    </androidx.cardview.widget.CardView>
+    </com.android.systemui.plugin.globalactions.wallet.WalletCardView>
 </FrameLayout>
